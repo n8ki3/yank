@@ -1,0 +1,15 @@
+# 배포 전용 compose - 이 파일 하나만 있으면 됩니다.
+# GitHub Actions가 GHCR에 올린 이미지를 받아서 실행합니다.
+# 사용: docker compose -f docker-compose.deploy.yml up -d
+services:
+  yank:
+    image: ghcr.io/n8ki3/yank:latest
+    container_name: yank
+    ports:
+      - "8501:8501"        # 시놀로지에서 원하는 포트로 앞 숫자만 변경
+    volumes:
+      - ./downloads:/downloads   # 다운로드 저장 위치 (시놀로지 공유폴더로 변경 가능)
+    environment:
+      - DOWNLOAD_DIR=/downloads
+    restart: unless-stopped
+    pull_policy: always

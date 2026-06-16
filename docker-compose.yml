@@ -1,0 +1,12 @@
+services:
+  yank:
+    build: .
+    image: yank:latest
+    container_name: yank
+    ports:
+      - "8501:8501"        # 호스트 8501 → 컨테이너 8501 (시놀로지에서 원하는 포트로 변경 가능)
+    volumes:
+      - ./downloads:/downloads   # 다운로드 결과 저장 위치 (호스트 폴더로 매핑)
+    environment:
+      - DOWNLOAD_DIR=/downloads
+    restart: unless-stopped

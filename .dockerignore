@@ -1,0 +1,18 @@
+# Windows 전용 바이너리 (리눅스 컨테이너에선 apt의 ffmpeg 사용, ~190MB 제외)
+ffmpeg.exe
+ffprobe.exe
+
+# 런처/문서 (이미지에 불필요)
+run.py
+README.md
+*.bat
+*.command
+*.sh
+
+# 로컬 산출물
+downloads/
+__pycache__/
+*.pyc
+.git
+.gitignore
+.DS_Store

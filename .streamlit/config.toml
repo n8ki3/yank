@@ -1,0 +1,14 @@
+[server]
+headless = true
+address = "0.0.0.0"
+port = 8501
+# 컨테이너/리버스 프록시 환경에서 업로드 및 CORS 안정화
+enableCORS = false
+enableXsrfProtection = false
+maxUploadSize = 2048
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "dark"
