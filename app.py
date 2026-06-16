@@ -34,6 +34,7 @@ if 'cut_result' not in st.session_state: st.session_state.cut_result = None
 if 'dl_result' not in st.session_state: st.session_state.dl_result = None
 if 'cut_timestamps' not in st.session_state: st.session_state.cut_timestamps = ""
 if 'chapter_msg' not in st.session_state: st.session_state.chapter_msg = None
+if 'auto_url_for' not in st.session_state: st.session_state.auto_url_for = None
 
 # ──────── 함수 ────────
 def get_ffmpeg_path():
@@ -51,6 +52,38 @@ def get_ffmpeg_path():
         return found
     # 4) 최종 폴백
     return 'ffmpeg'
+
+
+def get_ffprobe_path():
+    local_exe = os.path.join(os.getcwd(), 'ffprobe.exe')
+    if IS_WINDOWS and os.path.exists(local_exe):
+        return local_exe
+    local_bin = os.path.join(os.getcwd(), 'ffprobe')
+    if os.path.exists(local_bin):
+        return local_bin
+    found = shutil.which('ffprobe')
+    if found:
+        return found
+    return 'ffprobe'
+
+
+def read_url_from_file(path):
+    """영상 파일 메타데이터(comment 태그)에서 유튜브 주소를 읽는다. 없으면 None."""
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        out = subprocess.run(
+            [get_ffprobe_path(), '-v', 'error',
+             '-show_entries', 'format_tags=comment',
+             '-of', 'default=nw=1:nk=1', path],
+            capture_output=True, text=True, **subprocess_flags()
+        )
+        val = (out.stdout or '').strip()
+        if val.startswith('http') and ('youtu' in val):
+            return val
+    except Exception:
+        pass
+    return None
 
 
 def open_folder(path):
@@ -242,7 +275,7 @@ with tab1:
                 'merge_output_format': 'mp4',
                 'continuedl': True,
                 'overwrites': True,
-                'postprocessors': [{'key': 'FFmpegMetadata', 'add_metadata': False}], 
+                'postprocessors': [{'key': 'FFmpegMetadata', 'add_metadata': True}], 
             }
             
             if "최고화질" in quality:
@@ -266,6 +299,7 @@ with tab1:
                     
                 cmd = [
                     ffmpeg_path, '-y', '-i', final_filename, 
+                    '-map_metadata', '0',
                     '-c:v', 'libx264', '-preset', 'superfast', '-crf', '23',
                     '-c:a', 'aac', '-b:a', '192k', temp_name
                 ]
@@ -361,6 +395,30 @@ with tab2:
 
     if video_path:
         st.caption(f"대상 파일: `{video_path}`")
+
+    # 선택한 파일에 저장된 유튜브 주소가 있으면 자동으로 읽어 챕터를 불러온다 (파일당 1회)
+    if (video_path and os.path.exists(video_path)
+            and not st.session_state.is_processing
+            and st.session_state.auto_url_for != video_path):
+        st.session_state.auto_url_for = video_path
+        saved_url = read_url_from_file(video_path)
+        if saved_url:
+            st.session_state.chapter_url = saved_url
+            try:
+                auto_text = fetch_chapters(saved_url)
+                if auto_text:
+                    st.session_state.cut_timestamps = auto_text
+                    st.session_state.chapter_msg = (
+                        "success",
+                        f"📌 파일에 저장된 주소에서 챕터 {len(auto_text.splitlines())}개를 자동으로 불러왔습니다.",
+                    )
+                else:
+                    st.session_state.chapter_msg = (
+                        "info",
+                        "파일에 유튜브 주소는 있지만 챕터 정보가 없습니다. 타임스탬프를 직접 입력하세요.",
+                    )
+            except Exception as e:
+                st.session_state.chapter_msg = ("warning", f"자동 챕터 로드 실패: {e}")
 
     # 유튜브 URL에서 챕터 자동 불러오기
     st.write("---")
