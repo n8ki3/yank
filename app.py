@@ -83,6 +83,25 @@ def parse_time(t):
     except: return 0
     return 0
 
+VIDEO_EXTS = ('.mp4', '.mkv', '.mov', '.avi', '.webm', '.flv', '.m4v', '.ts', '.wmv', '.mpg', '.mpeg')
+
+def list_video_files(folder, limit=500):
+    """폴더(하위 폴더 포함)를 스캔해 영상 파일의 상대경로 목록을 반환한다."""
+    results = []
+    if not folder or not os.path.isdir(folder):
+        return results
+    try:
+        for root, _dirs, files in os.walk(folder):
+            for name in files:
+                if name.lower().endswith(VIDEO_EXTS):
+                    full = os.path.join(root, name)
+                    results.append(os.path.relpath(full, folder))
+                    if len(results) >= limit:
+                        return sorted(results)
+    except Exception:
+        pass
+    return sorted(results)
+
 # ──────── UI ────────
 st.title("🎬 YANK : YouTube And Kut")
 
@@ -203,8 +222,64 @@ with tab1:
 # ──────── [탭2] 자르기 ────────
 with tab2:
     st.header("타임스탬프 자르기")
-    
-    video_path = st.text_input("원본 파일 경로", disabled=st.session_state.is_processing)
+
+    scan_dir = st.text_input(
+        "📁 검색 폴더",
+        value=default_dir,
+        disabled=st.session_state.is_processing,
+        help="이 폴더(하위 폴더 포함)를 읽어 영상 파일을 목록으로 보여줍니다.",
+    )
+
+    video_files = list_video_files(scan_dir)
+    video_path = ""
+
+    if video_files:
+        # 하위 폴더(계층)별로 그룹화 → 폴더 먼저 선택, 그 안의 파일 선택
+        folders = sorted({os.path.dirname(f) for f in video_files})
+        folder_labels = ["[전체 보기]"] + [
+            ("📁 " + (fd if fd else "(최상위 폴더)")) for fd in folders
+        ]
+        # 라벨 → 실제 폴더값 매핑 ('' 는 최상위)
+        label_to_folder = {folder_labels[0]: None}
+        for lbl, fd in zip(folder_labels[1:], folders):
+            label_to_folder[lbl] = fd
+
+        chosen_label = st.selectbox(
+            f"📂 폴더 선택 ({len(folders)}개 폴더 / 영상 {len(video_files)}개)",
+            options=folder_labels,
+            disabled=st.session_state.is_processing,
+        )
+        chosen_folder = label_to_folder.get(chosen_label)
+
+        if chosen_folder is None:
+            # 전체 보기: 계층이 드러나도록 상대경로 그대로 표시
+            file_options = video_files
+        else:
+            file_options = [f for f in video_files if os.path.dirname(f) == chosen_folder]
+
+        selected = st.selectbox(
+            f"🎞️ 영상 파일 선택 ({len(file_options)}개)",
+            options=file_options,
+            # 폴더를 고른 경우엔 파일명만, 전체 보기면 상대경로 전체를 보여줌
+            format_func=(lambda p: p if chosen_folder is None else os.path.basename(p)),
+            disabled=st.session_state.is_processing,
+        )
+        if selected:
+            video_path = os.path.join(scan_dir, selected)
+    else:
+        st.info("해당 폴더에서 영상 파일을 찾지 못했습니다. 폴더 경로를 확인하거나 아래에 전체 경로를 직접 입력하세요.")
+
+    manual_path = st.text_input(
+        "또는 전체 경로 직접 입력 (선택)",
+        disabled=st.session_state.is_processing,
+        help="목록에 없는 파일은 전체 경로를 직접 입력하세요. 입력 시 위 선택보다 우선합니다.",
+    )
+    if manual_path.strip():
+        video_path = manual_path.strip()
+
+    if video_path:
+        st.caption(f"대상 파일: `{video_path}`")
+
     col_t1, col_t2 = st.columns([3, 1])
     with col_t1: timestamps = st.text_area("타임스탬프", height=200, disabled=st.session_state.is_processing)
     with col_t2: 
@@ -213,7 +288,9 @@ with tab2:
         
     if st.button("✂️ 자르기 실행", type="primary", disabled=st.session_state.is_processing):
         if not video_path or not timestamps:
-            st.error("경로와 타임스탬프를 확인하세요.")
+            st.error("파일과 타임스탬프를 확인하세요.")
+        elif not os.path.exists(video_path):
+            st.error(f"파일을 찾을 수 없습니다: {video_path}")
         else:
             st.session_state.is_processing = True
             st.rerun()

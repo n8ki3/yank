@@ -11,5 +11,5 @@ services:
       - ./downloads:/downloads   # 다운로드 저장 위치 (시놀로지 공유폴더로 변경 가능)
     environment:
       - DOWNLOAD_DIR=/downloads
-    restart: unless-stopped
+    restart: always
     pull_policy: always
