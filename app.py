@@ -30,6 +30,7 @@ st.set_page_config(page_title="YANK - YouTube And Kut", page_icon="🎬", layout
 if 'url_input' not in st.session_state: st.session_state.url_input = ""
 if 'last_save_path' not in st.session_state: st.session_state.last_save_path = ""
 if 'is_processing' not in st.session_state: st.session_state.is_processing = False
+if 'cut_result' not in st.session_state: st.session_state.cut_result = None
 
 # ──────── 함수 ────────
 def get_ffmpeg_path():
@@ -223,6 +224,17 @@ with tab1:
 with tab2:
     st.header("타임스탬프 자르기")
 
+    # 이전 실행 결과 표시 (rerun 후에도 유지)
+    if st.session_state.cut_result:
+        kind, msg = st.session_state.cut_result
+        if kind == "success":
+            st.success(msg)
+        elif kind == "warning":
+            st.warning(msg)
+        else:
+            st.error(msg)
+        st.session_state.cut_result = None
+
     scan_dir = st.text_input(
         "📁 검색 폴더",
         value=default_dir,
@@ -284,7 +296,13 @@ with tab2:
     with col_t1: timestamps = st.text_area("타임스탬프", height=200, disabled=st.session_state.is_processing)
     with col_t2: 
         st.write("#### 설정")
-        fast_mode = st.checkbox("⚡ 단순 자르기", value=False, disabled=st.session_state.is_processing)
+        fast_mode = st.checkbox(
+            "⚡ 단순 자르기 (빠름·부정확)",
+            value=False,
+            disabled=st.session_state.is_processing,
+            help="재인코딩 없이 키프레임 단위로 잘라 빠르지만, 타임스탬프와 몇 초 어긋날 수 있습니다. "
+                 "정확히 자르려면 체크 해제(재인코딩) 상태로 두세요.",
+        )
         
     if st.button("✂️ 자르기 실행", type="primary", disabled=st.session_state.is_processing):
         if not video_path or not timestamps:
@@ -307,8 +325,13 @@ with tab2:
                 if m:
                     clean_name = re.sub(r'[<>:"/\\|?*]', '_', re.sub(r'^[-: ]+', '', m.group(2)).strip()) or "NoTitle"
                     segments.append((parse_time(m.group(1)), clean_name))
-            
-            if segments:
+
+            if not segments:
+                st.session_state.cut_result = (
+                    "warning",
+                    "타임스탬프를 인식하지 못했습니다. 예) `0:00 인트로` 또는 `00:00:00 제목` 형식으로 입력하세요.",
+                )
+            else:
                 folder = os.path.dirname(video_path)
                 save_dir = os.path.join(folder, f"{os.path.splitext(os.path.basename(video_path))[0]}_편집본")
                 os.makedirs(save_dir, exist_ok=True)
@@ -325,10 +348,13 @@ with tab2:
                     subprocess.run(cmd, check=True, **subprocess_flags())
                     bar.progress((i+1)/len(segments))
                 
-                st.success("자르기 완료!")
+                st.session_state.cut_result = (
+                    "success",
+                    f"✂️ 자르기 완료! {len(segments)}개 파일 저장됨 → {save_dir}",
+                )
                 st.session_state.last_save_path = save_dir 
         except Exception as e:
-            st.error(f"오류: {e}")
+            st.session_state.cut_result = ("error", f"오류: {e}")
         finally:
             st.session_state.is_processing = False
             st.rerun()
