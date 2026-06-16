@@ -1,6 +1,7 @@
 # 배포 전용 compose - 이 파일 하나만 있으면 됩니다.
 # GitHub Actions가 GHCR에 올린 이미지를 받아서 실행합니다.
 # 사용: docker compose -f docker-compose.deploy.yml up -d
+# 갱신: docker-compose -f docker-compose.deploy.yml pull
 services:
   yank:
     image: ghcr.io/n8ki3/yank:latest
