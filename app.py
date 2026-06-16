@@ -31,6 +31,7 @@ if 'url_input' not in st.session_state: st.session_state.url_input = ""
 if 'last_save_path' not in st.session_state: st.session_state.last_save_path = ""
 if 'is_processing' not in st.session_state: st.session_state.is_processing = False
 if 'cut_result' not in st.session_state: st.session_state.cut_result = None
+if 'dl_result' not in st.session_state: st.session_state.dl_result = None
 
 # ──────── 함수 ────────
 def get_ffmpeg_path():
@@ -111,7 +112,18 @@ tab1, tab2 = st.tabs(["⬇️ 다운로드", "✂️ 자르기"])
 # ──────── [탭1] 다운로드 ────────
 with tab1:
     st.header("유튜브 영상 다운로드")
-    
+
+    # 이전 실행 결과 표시 + 토스트 알림 (rerun 후에도 유지)
+    if st.session_state.dl_result:
+        kind, msg = st.session_state.dl_result
+        if kind == "success":
+            st.success(msg)
+            st.toast(msg, icon="🎉")
+        else:
+            st.error(msg)
+            st.toast("다운로드 실패", icon="⚠️")
+        st.session_state.dl_result = None
+
     col_input, col_btn = st.columns([5, 1])
     with col_input:
         url = st.text_input("유튜브 주소", key="url_input", disabled=st.session_state.is_processing)
@@ -205,11 +217,11 @@ with tab1:
                 os.replace(temp_name, final_filename)
 
             pbar.progress(100)
-            status.success("🎉 작업 완료!")
+            st.session_state.dl_result = ("success", f"🎉 다운로드 완료! → {save_path}")
             st.session_state.last_save_path = save_path
             
         except Exception as e:
-            st.error(f"오류: {e}")
+            st.session_state.dl_result = ("error", f"오류: {e}")
         finally:
             st.session_state.is_processing = False
             st.rerun()
@@ -224,15 +236,17 @@ with tab1:
 with tab2:
     st.header("타임스탬프 자르기")
 
-    # 이전 실행 결과 표시 (rerun 후에도 유지)
+    # 이전 실행 결과 표시 + 토스트 알림 (rerun 후에도 유지)
     if st.session_state.cut_result:
         kind, msg = st.session_state.cut_result
         if kind == "success":
             st.success(msg)
+            st.toast("자르기 완료!", icon="✂️")
         elif kind == "warning":
             st.warning(msg)
         else:
             st.error(msg)
+            st.toast("자르기 실패", icon="⚠️")
         st.session_state.cut_result = None
 
     scan_dir = st.text_input(
@@ -293,7 +307,13 @@ with tab2:
         st.caption(f"대상 파일: `{video_path}`")
 
     col_t1, col_t2 = st.columns([3, 1])
-    with col_t1: timestamps = st.text_area("타임스탬프", height=200, disabled=st.session_state.is_processing)
+    with col_t1: timestamps = st.text_area(
+        "타임스탬프",
+        height=200,
+        disabled=st.session_state.is_processing,
+        placeholder="예시) 한 줄에 하나씩 '시간 제목'\n\n0:00 오프닝\n1:12 게스트 소개\n8:40 본격 토크\n25:30 Q&A\n42:15 클로징",
+        help="각 줄의 시간이 그 구간의 시작점입니다. 분:초 또는 시:분:초 형식을 지원합니다.",
+    )
     with col_t2: 
         st.write("#### 설정")
         fast_mode = st.checkbox(
