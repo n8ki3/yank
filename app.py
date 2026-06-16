@@ -32,6 +32,8 @@ if 'last_save_path' not in st.session_state: st.session_state.last_save_path = "
 if 'is_processing' not in st.session_state: st.session_state.is_processing = False
 if 'cut_result' not in st.session_state: st.session_state.cut_result = None
 if 'dl_result' not in st.session_state: st.session_state.dl_result = None
+if 'cut_timestamps' not in st.session_state: st.session_state.cut_timestamps = ""
+if 'chapter_msg' not in st.session_state: st.session_state.chapter_msg = None
 
 # ──────── 함수 ────────
 def get_ffmpeg_path():
@@ -103,6 +105,60 @@ def list_video_files(folder, limit=500):
     except Exception:
         pass
     return sorted(results)
+
+def sec_to_ts(sec):
+    """초 -> 'M:SS' 또는 'H:MM:SS' 문자열."""
+    sec = int(round(sec))
+    h, rem = divmod(sec, 3600)
+    m, s = divmod(rem, 60)
+    if h > 0:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
+
+def fetch_chapters(url):
+    """유튜브 URL에서 챕터를 추출해 '시간 제목' 여러 줄 문자열로 반환.
+    챕터가 없으면 None을 반환한다."""
+    ydl_opts = {
+        'quiet': True,
+        'no_warnings': True,
+        'skip_download': True,
+        'nocheckcertificate': True,
+        'extract_flat': False,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+    chapters = info.get('chapters') or []
+    if not chapters:
+        return None
+    lines = []
+    for ch in chapters:
+        start = ch.get('start_time')
+        if start is None:
+            continue
+        title = (ch.get('title') or '').strip()
+        lines.append(f"{sec_to_ts(start)} {title}".rstrip())
+    return "\n".join(lines) if lines else None
+
+# ──────── 콜백 ────────
+def load_chapters_callback():
+    """챕터 가져오기 버튼 콜백: URL에서 챕터를 읽어 타임스탬프 칸을 채운다."""
+    url = st.session_state.get("chapter_url", "").strip()
+    if not url:
+        st.session_state.chapter_msg = ("warning", "유튜브 주소를 입력하세요.")
+        return
+    try:
+        text = fetch_chapters(url)
+        if text:
+            st.session_state.cut_timestamps = text
+            n = len(text.splitlines())
+            st.session_state.chapter_msg = ("success", f"챕터 {n}개를 불러왔습니다.")
+        else:
+            st.session_state.chapter_msg = (
+                "warning",
+                "이 영상엔 챕터 정보가 없습니다. 설명란의 타임스탬프를 직접 붙여넣어 주세요.",
+            )
+    except Exception as e:
+        st.session_state.chapter_msg = ("error", f"챕터를 불러오지 못했습니다: {e}")
 
 # ──────── UI ────────
 st.title("🎬 YANK : YouTube And Kut")
@@ -306,23 +362,44 @@ with tab2:
     if video_path:
         st.caption(f"대상 파일: `{video_path}`")
 
+    # 유튜브 URL에서 챕터 자동 불러오기
+    st.write("---")
+    col_u1, col_u2 = st.columns([5, 1])
+    with col_u1:
+        st.text_input(
+            "🔗 유튜브 주소 (챕터 자동 불러오기)",
+            key="chapter_url",
+            disabled=st.session_state.is_processing,
+            help="챕터가 있는 영상이면 아래 타임스탬프 칸을 자동으로 채웁니다.",
+        )
+    with col_u2:
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+        st.button(
+            "📥 챕터 가져오기",
+            on_click=load_chapters_callback,
+            use_container_width=True,
+            disabled=st.session_state.is_processing,
+        )
+
+    if st.session_state.chapter_msg:
+        ckind, cmsg = st.session_state.chapter_msg
+        getattr(st, ckind if ckind in ("success", "warning", "error", "info") else "info")(cmsg)
+        st.session_state.chapter_msg = None
+
     col_t1, col_t2 = st.columns([3, 1])
     with col_t1: timestamps = st.text_area(
         "타임스탬프",
         height=200,
+        key="cut_timestamps",
         disabled=st.session_state.is_processing,
         placeholder="예시) 한 줄에 하나씩 '시간 제목'\n\n0:00 오프닝\n1:12 게스트 소개\n8:40 본격 토크\n25:30 Q&A\n42:15 클로징",
         help="각 줄의 시간이 그 구간의 시작점입니다. 분:초 또는 시:분:초 형식을 지원합니다.",
     )
-    with col_t2: 
+    with col_t2:
         st.write("#### 설정")
-        fast_mode = st.checkbox(
-            "⚡ 단순 자르기 (빠름·부정확)",
-            value=False,
-            disabled=st.session_state.is_processing,
-            help="재인코딩 없이 키프레임 단위로 잘라 빠르지만, 타임스탬프와 몇 초 어긋날 수 있습니다. "
-                 "정확히 자르려면 체크 해제(재인코딩) 상태로 두세요.",
-        )
+        st.caption("정밀 자르기(재인코딩)로 동작합니다.")
+        # 단순 자르기 모드는 정확도 문제로 화면에서 숨김 (항상 정밀 모드)
+        fast_mode = False
         
     if st.button("✂️ 자르기 실행", type="primary", disabled=st.session_state.is_processing):
         if not video_path or not timestamps:
